@@ -82,7 +82,18 @@ void OrchGateAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
                 const bool nowOpen = this->getEffectiveGateOpen();
 
-                if (previousEffectiveGateOpen && ! nowOpen)
+                // Deliberately NOT gated on "previousEffectiveGateOpen && !
+                // nowOpen" (an edge trigger) here - live-rig bug 2026-09-10:
+                // a note that reached the synth by some path this gate never
+                // tracked (the Pass Keyswitches bypass below, a mid-stream
+                // plugin reset, anything) leaves activeNotes/
+                // previousEffectiveGateOpen believing the gate was already
+                // closed, so an edge-triggered cleanup never fires for it -
+                // "Send All Off" (which resends CC=0 unconditionally) landed
+                // here and still did nothing. An explicit "closed" CC should
+                // always mean closed, full stop, regardless of what this
+                // gate's own bookkeeping previously believed.
+                if (! nowOpen)
                 {
                     const int muteMode = muteModeParameter != nullptr
                         ? juce::roundToInt (muteModeParameter->load())
