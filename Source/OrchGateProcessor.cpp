@@ -24,7 +24,10 @@ void OrchGateAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     for (auto& channelNotes : activeNotes)
         channelNotes.fill (false);
 
-    ccGateOpen = true;
+    // Closed until proven otherwise - see ccGateOpen's declaration. Every
+    // transport start (prepareToPlay) re-arms this, so a stale "open" from a
+    // previous session/run can never survive into a new one.
+    ccGateOpen = false;
     lastCcValue.store (-1, std::memory_order_relaxed);
 
     previousEffectiveGateOpen = this->getEffectiveGateOpen();
@@ -261,7 +264,10 @@ void OrchGateAudioProcessor::setStateInformation (const void* data, int sizeInBy
     for (auto& channelNotes : activeNotes)
         channelNotes.fill (false);
 
-    ccGateOpen = true;
+    // Same fail-safe-closed reasoning as prepareToPlay() - a restored/reloaded
+    // project has no more basis for assuming the gate was left open than a
+    // fresh instance does.
+    ccGateOpen = false;
     lastCcValue.store (-1, std::memory_order_relaxed);
 
     previousEffectiveGateOpen = this->getEffectiveGateOpen();

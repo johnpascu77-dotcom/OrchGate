@@ -63,9 +63,18 @@ std::atomic<float>* passKeyswitchesParameter = nullptr;
 
     juce::Random random;
 
-    bool ccGateOpen = true;
+    // Fail-safe default: closed, not open. Until this instance's selected CC
+    // has actually arrived at least once (from OrchConductor, directly or via
+    // OrchPercMapper's Arbiter), there is no basis for assuming participation
+    // was ever granted - "silence until told otherwise" is the correct
+    // default for a plugin whose entire purpose is conductor-driven gating.
+    // Was `true` (fail-open): live-rig bug 2026-09-10, an extra MIDI-FX hop
+    // (the Arbiter) made the corrective CC late or dropped from Bitwig's
+    // point of view often enough that percussion tracks played through
+    // unconditionally until manually "woken up" by chance.
+    bool ccGateOpen = false;
     std::atomic<int> lastCcValue { -1 };
-    bool previousEffectiveGateOpen = true;
+    bool previousEffectiveGateOpen = false;
 
     std::array<std::array<bool, 128>, 16> activeNotes {};
 
