@@ -2,6 +2,21 @@
 
 project(OrchGate VERSION 0.1.0)
 
+# Build-timestamp label (see cmake/GenerateOrchGateBuildInfo.cmake): a plain
+# custom target with no OUTPUT/DEPENDS tracking, so it reruns and rewrites
+# the header on every single build, not just every configure or only when a
+# source file happens to change.
+set(OrchGateGeneratedDir "${CMAKE_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${OrchGateGeneratedDir}")
+
+add_custom_target(OrchGateGenerateBuildInfo ALL
+    COMMAND ${CMAKE_COMMAND}
+        "-DOUTPUT_FILE=${OrchGateGeneratedDir}/OrchGateBuildInfo.h"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateOrchGateBuildInfo.cmake"
+    BYPRODUCTS "${OrchGateGeneratedDir}/OrchGateBuildInfo.h"
+    COMMENT "Stamping OrchGate build timestamp"
+)
+
 # Path to your JUCE folder.
 add_subdirectory("C:/JUCE/JUCE" JUCE)
 
@@ -33,6 +48,9 @@ target_sources(OrchGate
         Source/OrchGateProcessor.cpp
         Source/OrchGateEditor.cpp
 )
+
+add_dependencies(OrchGate OrchGateGenerateBuildInfo)
+target_include_directories(OrchGate PRIVATE ${OrchGateGeneratedDir})
 
 target_compile_definitions(OrchGate
     PUBLIC
