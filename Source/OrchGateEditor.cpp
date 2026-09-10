@@ -4,7 +4,7 @@
 OrchGateAudioProcessorEditor::OrchGateAudioProcessorEditor (OrchGateAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    setSize (640, 812);
+    setSize (640, 968);
 
     titleLabel.setText ("OrchGate", juce::dontSendNotification);
     titleLabel.setJustificationType (juce::Justification::centred);
@@ -127,6 +127,44 @@ OrchGateAudioProcessorEditor::OrchGateAudioProcessorEditor (OrchGateAudioProcess
         addAndMakeVisible (*s);
     }
 
+    followConductorResponseButton.setButtonText ("Follow Conductor Response");
+    followConductorResponseButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
+    addAndMakeVisible (followConductorResponseButton);
+
+    for (auto* b : { &responseAffectsInvertButton, &responseAffectsThresholdButton, &responseAffectsParticipationButton })
+        b->setColour (juce::ToggleButton::textColourId, juce::Colours::white);
+
+    responseAffectsInvertButton.setButtonText ("Invert");
+    responseAffectsThresholdButton.setButtonText ("Threshold");
+    responseAffectsParticipationButton.setButtonText ("Participation");
+    addAndMakeVisible (responseAffectsInvertButton);
+    addAndMakeVisible (responseAffectsThresholdButton);
+    addAndMakeVisible (responseAffectsParticipationButton);
+
+    responseCcLabel.setText ("Response CCs from OrchConductor  (Mode / Amount)", juce::dontSendNotification);
+    responseCcLabel.setJustificationType (juce::Justification::centred);
+    responseCcLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    responseCcLabel.setFont (juce::FontOptions (12.0f));
+    addAndMakeVisible (responseCcLabel);
+
+    for (auto* s : { &responseModeCcSlider, &responseAmountCcSlider })
+    {
+        s->setSliderStyle (juce::Slider::LinearHorizontal);
+        s->setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 22);
+        s->setRange (0.0, 127.0, 1.0);
+        s->setColour (juce::Slider::thumbColourId, juce::Colour::fromRGB (95, 220, 140));
+        s->setColour (juce::Slider::trackColourId, juce::Colour::fromRGB (95, 200, 245));
+        s->setColour (juce::Slider::textBoxTextColourId, juce::Colours::white);
+        s->setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour::fromRGB (28, 36, 46));
+        addAndMakeVisible (*s);
+    }
+
+    responseSummaryLabel.setText ("Bridge off", juce::dontSendNotification);
+    responseSummaryLabel.setJustificationType (juce::Justification::centred);
+    responseSummaryLabel.setColour (juce::Label::textColourId, juce::Colour::fromRGB (140, 200, 245));
+    responseSummaryLabel.setFont (juce::FontOptions (12.0f));
+    addAndMakeVisible (responseSummaryLabel);
+
     passKeyswitchesButton.setButtonText ("Pass Keyswitches");
     passKeyswitchesButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
     addAndMakeVisible (passKeyswitchesButton);
@@ -205,6 +243,19 @@ OrchGateAudioProcessorEditor::OrchGateAudioProcessorEditor (OrchGateAudioProcess
         audioProcessor.getParameters(), "ccPartMin", ccPartMinSlider);
     ccPartMaxAttachment = std::make_unique<SliderAttachment> (
         audioProcessor.getParameters(), "ccPartMax", ccPartMaxSlider);
+
+    followConductorResponseAttachment = std::make_unique<ButtonAttachment> (
+        audioProcessor.getParameters(), "followConductorResponse", followConductorResponseButton);
+    responseAffectsInvertAttachment = std::make_unique<ButtonAttachment> (
+        audioProcessor.getParameters(), "responseAffectsInvert", responseAffectsInvertButton);
+    responseAffectsThresholdAttachment = std::make_unique<ButtonAttachment> (
+        audioProcessor.getParameters(), "responseAffectsThreshold", responseAffectsThresholdButton);
+    responseAffectsParticipationAttachment = std::make_unique<ButtonAttachment> (
+        audioProcessor.getParameters(), "responseAffectsParticipation", responseAffectsParticipationButton);
+    responseModeCcAttachment = std::make_unique<SliderAttachment> (
+        audioProcessor.getParameters(), "responseModeCc", responseModeCcSlider);
+    responseAmountCcAttachment = std::make_unique<SliderAttachment> (
+        audioProcessor.getParameters(), "responseAmountCc", responseAmountCcSlider);
 
     passKeyswitchesAttachment = std::make_unique<ButtonAttachment> (
         audioProcessor.getParameters(),
@@ -286,6 +337,24 @@ void OrchGateAudioProcessorEditor::resized()
         ccPartMaxSlider.setBounds (row.removeFromLeft (214));
     }
 
+    area.removeFromTop (14);
+
+    followConductorResponseButton.setBounds (area.removeFromTop (28).withSizeKeepingCentre (260, 28));
+    {
+        auto row = area.removeFromTop (26).withSizeKeepingCentre (440, 26);
+        responseAffectsInvertButton.setBounds (row.removeFromLeft (110));
+        responseAffectsThresholdButton.setBounds (row.removeFromLeft (130));
+        responseAffectsParticipationButton.setBounds (row.removeFromLeft (150));
+    }
+    responseCcLabel.setBounds (area.removeFromTop (16));
+    {
+        auto row = area.removeFromTop (26).withSizeKeepingCentre (440, 26);
+        responseModeCcSlider.setBounds (row.removeFromLeft (214));
+        row.removeFromLeft (12);
+        responseAmountCcSlider.setBounds (row.removeFromLeft (214));
+    }
+    responseSummaryLabel.setBounds (area.removeFromTop (18));
+
     area.removeFromTop (12);
 
     passKeyswitchesButton.setBounds (area.removeFromTop (30).withSizeKeepingCentre (220, 30));
@@ -349,6 +418,8 @@ void OrchGateAudioProcessorEditor::timerCallback()
         + juce::String (juce::jmin (keyswitchMinUi, keyswitchMaxUi))
         + "-" + juce::String (juce::jmax (keyswitchMinUi, keyswitchMaxUi)),
         juce::dontSendNotification);
+
+    responseSummaryLabel.setText (audioProcessor.getResponseOverlaySummaryForUi(), juce::dontSendNotification);
 
     const bool effectiveOpen = audioProcessor.isEffectiveGateOpenForUi();
     const bool manualOpen = audioProcessor.isManualGateOpenForUi();

@@ -630,3 +630,25 @@ Current plugin state:
 - The system is already musically useful.
 
 Next immediate work should remain focused on finishing and polishing OrchNoteMapper before starting the companion plugin.
+
+---
+
+## Addendum — OrchGate Response Bridge (2026-09-11)
+
+Built alongside "CC -> Participation". OrchConductor can now drive every OrchGate's *response*
+(not just its gate CC) over two broadcast CCs, so the user never toggles CC Invert / nudges CC
+Threshold / participation range on each instance by hand.
+
+- **CC 106 (Mode)** + **CC 107 (Amount)** from OrchConductor, channel 1. Undefined controllers,
+  clear of the CC20-62 orchestration map, CC102-105, and MPL's CC20-64.
+- OrchGate: **Follow Conductor Response** toggle (default off) + per-target opt-ins
+  (`responseAffectsInvert` / `Threshold` / `Participation`, default on) + relocatable
+  `responseModeCc` / `responseAmountCc`.
+- `resolveResponseOverlay()` seeds a per-instance randomiser from `hash(mode value, this
+  instance's gate CC number)`, scaled by amount: Invert flips up to 50% of the rig at full
+  amount; Threshold jitters +/-24; participation Floor/Ceiling +/-20%. The plugin's own
+  `ccInvert` / `ccThreshold` stay the base; the overlay is applied on top and is fully
+  deterministic (same mode + same instance = same overlay, across reloads).
+- Standalone OrchGate (host LFOs, no OrchConductor) is unaffected - the bridge is opt-in.
+
+Full design: `OrchConductor/Docs/OrchConductor_MC_Integration_And_Narrative_Scan_Design.md` §19.

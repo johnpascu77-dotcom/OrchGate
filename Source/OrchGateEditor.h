@@ -45,6 +45,15 @@ juce::Label ccSummaryLabel;
     juce::Slider ccPartMinSlider;
     juce::Slider ccPartMaxSlider;
 
+    juce::ToggleButton followConductorResponseButton;
+    juce::ToggleButton responseAffectsInvertButton;
+    juce::ToggleButton responseAffectsThresholdButton;
+    juce::ToggleButton responseAffectsParticipationButton;
+    juce::Label responseCcLabel;
+    juce::Slider responseModeCcSlider;
+    juce::Slider responseAmountCcSlider;
+    juce::Label responseSummaryLabel;
+
         juce::ToggleButton passKeyswitchesButton;
     juce::Label keyswitchMinLabel;
     juce::Slider keyswitchMinSlider;
@@ -67,6 +76,12 @@ juce::Label gateStatusLabel;
     std::unique_ptr<ButtonAttachment> ccToParticipationAttachment;
     std::unique_ptr<SliderAttachment> ccPartMinAttachment;
     std::unique_ptr<SliderAttachment> ccPartMaxAttachment;
+    std::unique_ptr<ButtonAttachment> followConductorResponseAttachment;
+    std::unique_ptr<ButtonAttachment> responseAffectsInvertAttachment;
+    std::unique_ptr<ButtonAttachment> responseAffectsThresholdAttachment;
+    std::unique_ptr<ButtonAttachment> responseAffectsParticipationAttachment;
+    std::unique_ptr<SliderAttachment> responseModeCcAttachment;
+    std::unique_ptr<SliderAttachment> responseAmountCcAttachment;
     std::unique_ptr<ButtonAttachment> passKeyswitchesAttachment;
     std::unique_ptr<SliderAttachment> keyswitchMinAttachment;
     std::unique_ptr<SliderAttachment> keyswitchMaxAttachment;

@@ -14,6 +14,12 @@ OrchGateAudioProcessor::OrchGateAudioProcessor()
     ccToParticipationParameter = parameters.getRawParameterValue ("ccToParticipation");
     ccPartMinParameter = parameters.getRawParameterValue ("ccPartMin");
     ccPartMaxParameter = parameters.getRawParameterValue ("ccPartMax");
+    followConductorResponseParameter = parameters.getRawParameterValue ("followConductorResponse");
+    responseAffectsInvertParameter = parameters.getRawParameterValue ("responseAffectsInvert");
+    responseAffectsThresholdParameter = parameters.getRawParameterValue ("responseAffectsThreshold");
+    responseAffectsParticipationParameter = parameters.getRawParameterValue ("responseAffectsParticipation");
+    responseModeCcParameter = parameters.getRawParameterValue ("responseModeCc");
+    responseAmountCcParameter = parameters.getRawParameterValue ("responseAmountCc");
         muteModeParameter = parameters.getRawParameterValue ("muteMode");
 passKeyswitchesParameter = parameters.getRawParameterValue ("passKeyswitches");
     keyswitchMinParameter = parameters.getRawParameterValue ("keyswitchMin");
@@ -32,6 +38,8 @@ void OrchGateAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     // previous session/run can never survive into a new one.
     ccGateOpen = false;
     lastCcValue.store (-1, std::memory_order_relaxed);
+    lastResponseModeValue.store (-1, std::memory_order_relaxed);
+    lastResponseAmountValue.store (-1, std::memory_order_relaxed);
 
     previousEffectiveGateOpen = this->getEffectiveGateOpen();
 }
@@ -57,18 +65,32 @@ void OrchGateAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     const bool ccToParticipation = ccToParticipationParameter != nullptr
         && ccToParticipationParameter->load() >= 0.5f;
 
-    const float partFloor = ccPartMinParameter != nullptr
+    // The plugin's own literal settings, before the OrchConductor response
+    // bridge (if any) is folded in.
+    const float basePartFloor = ccPartMinParameter != nullptr
         ? juce::jlimit (0.0f, 100.0f, ccPartMinParameter->load()) : 0.0f;
-    const float partCeil = ccPartMaxParameter != nullptr
+    const float basePartCeil = ccPartMaxParameter != nullptr
         ? juce::jlimit (0.0f, 100.0f, ccPartMaxParameter->load()) : 100.0f;
+    const bool baseInvert = ccInvertParameter != nullptr && ccInvertParameter->load() >= 0.5f;
+    const int baseThreshold = ccThresholdParameter != nullptr
+        ? juce::jlimit (0, 127, juce::roundToInt (ccThresholdParameter->load())) : 64;
+
+    const int responseModeCc = responseModeCcParameter != nullptr
+        ? juce::jlimit (0, 127, juce::roundToInt (responseModeCcParameter->load())) : 106;
+    const int responseAmountCc = responseAmountCcParameter != nullptr
+        ? juce::jlimit (0, 127, juce::roundToInt (responseAmountCcParameter->load())) : 107;
+
+    // Non-const: a response-bridge CC (mode / amount) arriving mid-block
+    // re-resolves this for the notes that follow it.
+    ResponseOverlay overlay = resolveResponseOverlay (baseInvert, baseThreshold, basePartFloor, basePartCeil);
 
     auto participationForCc = [&] (int ccValue) -> float
     {
         if (ccValue < 0)
             return manualParticipation;   // no CC seen yet - fall back to the slider
 
-        const float lo = juce::jmin (partFloor, partCeil);
-        const float hi = juce::jmax (partFloor, partCeil);
+        const float lo = juce::jmin (overlay.partFloor, overlay.partCeil);
+        const float hi = juce::jmax (overlay.partFloor, overlay.partCeil);
         return juce::jlimit (0.0f, 100.0f, lo + (hi - lo) * static_cast<float> (ccValue) / 127.0f);
     };
 
@@ -95,12 +117,11 @@ void OrchGateAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
             {
                 const int value = juce::jlimit (0, 127, message.getControllerValue());
 
-                const int threshold = ccThresholdParameter != nullptr
-                    ? juce::jlimit (0, 127, juce::roundToInt (ccThresholdParameter->load()))
-                    : 64;
-
-                const bool inverted = ccInvertParameter != nullptr
-                    && ccInvertParameter->load() >= 0.5f;
+                // Effective threshold / invert = the plugin's own settings with
+                // the OrchConductor response overlay folded in (identity when
+                // the bridge is off or neutral).
+                const int threshold = overlay.threshold;
+                const bool inverted = overlay.invert;
 
                 lastCcValue.store (value, std::memory_order_relaxed);
 
@@ -136,6 +157,47 @@ void OrchGateAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
                 }
 
                 previousEffectiveGateOpen = nowOpen;
+            }
+            else if (message.getControllerNumber() == responseModeCc
+                     || message.getControllerNumber() == responseAmountCc)
+            {
+                // An OrchConductor response-bridge CC. Store it, re-resolve the
+                // overlay, and re-apply it to anything already in flight: the
+                // participation curve, and the binary gate (a flipped invert or
+                // a shifted threshold can change open/closed with no new gate
+                // CC of its own).
+                if (message.getControllerNumber() == responseModeCc)
+                    lastResponseModeValue.store (juce::jlimit (0, 127, message.getControllerValue()),
+                                                 std::memory_order_relaxed);
+                else
+                    lastResponseAmountValue.store (juce::jlimit (0, 127, message.getControllerValue()),
+                                                   std::memory_order_relaxed);
+
+                overlay = resolveResponseOverlay (baseInvert, baseThreshold, basePartFloor, basePartCeil);
+
+                const int lastCc = lastCcValue.load (std::memory_order_relaxed);
+
+                if (ccToParticipation)
+                    participation = participationForCc (lastCc);
+
+                if (lastCc >= 0)
+                {
+                    const bool normalOpen = lastCc >= overlay.threshold;
+                    ccGateOpen = overlay.invert ? ! normalOpen : normalOpen;
+
+                    const bool nowOpen = this->getEffectiveGateOpen();
+
+                    if (! nowOpen && previousEffectiveGateOpen)
+                    {
+                        const int muteMode = muteModeParameter != nullptr
+                            ? juce::roundToInt (muteModeParameter->load()) : 0;
+
+                        if (muteMode == 0)
+                            this->closeGateSafely (output, samplePosition);
+                    }
+
+                    previousEffectiveGateOpen = nowOpen;
+                }
             }
 
             // Always pass CC through to the next instrument.
@@ -310,6 +372,8 @@ void OrchGateAudioProcessor::setStateInformation (const void* data, int sizeInBy
     // fresh instance does.
     ccGateOpen = false;
     lastCcValue.store (-1, std::memory_order_relaxed);
+    lastResponseModeValue.store (-1, std::memory_order_relaxed);
+    lastResponseAmountValue.store (-1, std::memory_order_relaxed);
 
     previousEffectiveGateOpen = this->getEffectiveGateOpen();
 }
@@ -388,6 +452,46 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrchGateAudioProcessor::crea
         "CC Participation Ceiling %",
         0, 100, 100));
 
+    // --- OrchConductor response bridge ------------------------------------
+    // When "Follow Conductor Response" is on, two broadcast CCs from
+    // OrchConductor (mode = 106, amount = 107 by default) drive a
+    // deterministic per-instance overlay on top of the plugin's own CC
+    // Invert / CC Threshold / CC Participation range. The seed mixes the
+    // "mode" CC value with this instance's own gate CC number, so every
+    // OrchGate in the rig diverges but they all shift together when the
+    // conductor steps the mode, and identically after a project reload.
+    // Default OFF - a standalone OrchGate (LFOs from the host, no
+    // OrchConductor) is completely unaffected.
+    params.push_back (std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "followConductorResponse", 1 },
+        "Follow Conductor Response",
+        false));
+
+    params.push_back (std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "responseAffectsInvert", 1 },
+        "Response Affects Invert",
+        true));
+
+    params.push_back (std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "responseAffectsThreshold", 1 },
+        "Response Affects Threshold",
+        true));
+
+    params.push_back (std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "responseAffectsParticipation", 1 },
+        "Response Affects Participation",
+        true));
+
+    params.push_back (std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID { "responseModeCc", 1 },
+        "Response Mode CC",
+        0, 127, 106));
+
+    params.push_back (std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID { "responseAmountCc", 1 },
+        "Response Amount CC",
+        0, 127, 107));
+
     params.push_back (std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID { "muteMode", 1 },
         "Mute Mode",
@@ -441,6 +545,112 @@ bool OrchGateAudioProcessor::getEffectiveGateOpen() const
     return manualGateOpen && (! ccGateEnabled || ccGateOpen);
 }
 
+OrchGateAudioProcessor::ResponseOverlay
+OrchGateAudioProcessor::resolveResponseOverlay (bool baseInvert, int baseThreshold,
+                                                float basePartFloor, float basePartCeil) const
+{
+    ResponseOverlay o;
+    o.invert     = baseInvert;
+    o.threshold  = baseThreshold;
+    o.partFloor  = basePartFloor;
+    o.partCeil   = basePartCeil;
+
+    const bool follow = followConductorResponseParameter != nullptr
+        && followConductorResponseParameter->load() >= 0.5f;
+
+    if (! follow)
+        return o;
+
+    const int mode = lastResponseModeValue.load (std::memory_order_relaxed);
+
+    if (mode < 0)
+        return o;   // no response "chapter" has arrived - obey the literal settings
+
+    const int amountRaw = lastResponseAmountValue.load (std::memory_order_relaxed);
+    const float amount = juce::jlimit (0.0f, 1.0f,
+        static_cast<float> (amountRaw >= 0 ? amountRaw : 0) / 127.0f);
+
+    if (amount <= 0.0f)
+        return o;   // amount 0 = neutral overlay (also the "Send All Off" state)
+
+    const int instanceKey = ccNumberParameter != nullptr
+        ? juce::jlimit (0, 127, juce::roundToInt (ccNumberParameter->load()))
+        : 20;
+
+    auto hash = [] (int a, int b, int salt) -> juce::uint32
+    {
+        juce::uint32 h = 2166136261u;
+
+        for (int v : { a, b, salt, 0x27d4eb2f })
+        {
+            h ^= static_cast<juce::uint32> (v & 0xff);          h *= 16777619u;
+            h ^= static_cast<juce::uint32> ((v >> 8) & 0xff);   h *= 16777619u;
+            h ^= static_cast<juce::uint32> ((v >> 16) & 0xff);  h *= 16777619u;
+        }
+
+        h ^= h >> 15; h *= 2246822519u;
+        h ^= h >> 13; h *= 3266489917u;
+        h ^= h >> 16;
+        return h;
+    };
+
+    auto unitFor = [&] (int salt)
+    {
+        return static_cast<float> (hash (mode, instanceKey, salt) & 0xffffffu)
+             / static_cast<float> (0xffffff);
+    };
+
+    auto signedDelta = [&] (int salt, int span)
+    {
+        if (span <= 0)
+            return 0;
+
+        return static_cast<int> (hash (mode, instanceKey, salt)
+                                 % static_cast<juce::uint32> (2 * span + 1)) - span;
+    };
+
+    // --- Invert: at most half the rig flips at full amount ----------------
+    if (responseAffectsInvertParameter != nullptr && responseAffectsInvertParameter->load() >= 0.5f)
+    {
+        const bool bridgeFlip = unitFor (1) < amount * 0.5f;
+
+        if (bridgeFlip)
+        {
+            o.invert = ! baseInvert;
+            o.active = true;
+        }
+    }
+
+    // --- Threshold: +/- up to 24 around the user's value -----------------
+    if (responseAffectsThresholdParameter != nullptr && responseAffectsThresholdParameter->load() >= 0.5f)
+    {
+        const int delta = signedDelta (2, juce::roundToInt (amount * 24.0f));
+
+        if (delta != 0)
+        {
+            o.threshold = juce::jlimit (0, 127, baseThreshold + delta);
+            o.active = true;
+        }
+    }
+
+    // --- Participation floor / ceiling: +/- up to 20% each --------------
+    if (responseAffectsParticipationParameter != nullptr && responseAffectsParticipationParameter->load() >= 0.5f)
+    {
+        const int span = juce::roundToInt (amount * 20.0f);
+        const int fDelta = signedDelta (3, span);
+        const int cDelta = signedDelta (4, span);
+
+        if (fDelta != 0 || cDelta != 0)
+        {
+            o.partFloor = juce::jlimit (0.0f, 100.0f, basePartFloor + static_cast<float> (fDelta));
+            o.partCeil  = juce::jlimit (0.0f, 100.0f, basePartCeil  + static_cast<float> (cDelta));
+            o.active = true;
+        }
+    }
+
+    return o;
+}
+
 bool OrchGateAudioProcessor::isEffectiveGateOpenForUi() const
 {
     return getEffectiveGateOpen();
@@ -479,12 +689,74 @@ float OrchGateAudioProcessor::getEffectiveParticipationForUi() const
     if (! ccToPart || v < 0)
         return manual;
 
-    const float lo = juce::jmin (ccPartMinParameter != nullptr ? ccPartMinParameter->load() : 0.0f,
-                                 ccPartMaxParameter != nullptr ? ccPartMaxParameter->load() : 100.0f);
-    const float hi = juce::jmax (ccPartMinParameter != nullptr ? ccPartMinParameter->load() : 0.0f,
-                                 ccPartMaxParameter != nullptr ? ccPartMaxParameter->load() : 100.0f);
+    const float baseFloor = ccPartMinParameter != nullptr ? ccPartMinParameter->load() : 0.0f;
+    const float baseCeil  = ccPartMaxParameter != nullptr ? ccPartMaxParameter->load() : 100.0f;
+    const bool  baseInvert = ccInvertParameter != nullptr && ccInvertParameter->load() >= 0.5f;
+    const int   baseThreshold = ccThresholdParameter != nullptr
+        ? juce::jlimit (0, 127, juce::roundToInt (ccThresholdParameter->load())) : 64;
+
+    const auto overlay = resolveResponseOverlay (baseInvert, baseThreshold, baseFloor, baseCeil);
+
+    const float lo = juce::jmin (overlay.partFloor, overlay.partCeil);
+    const float hi = juce::jmax (overlay.partFloor, overlay.partCeil);
 
     return juce::jlimit (0.0f, 100.0f, lo + (hi - lo) * static_cast<float> (v) / 127.0f);
+}
+
+bool OrchGateAudioProcessor::isFollowingConductorResponseForUi() const
+{
+    return followConductorResponseParameter != nullptr
+        && followConductorResponseParameter->load() >= 0.5f;
+}
+
+int OrchGateAudioProcessor::getLastResponseModeValueForUi() const
+{
+    return lastResponseModeValue.load (std::memory_order_relaxed);
+}
+
+int OrchGateAudioProcessor::getLastResponseAmountValueForUi() const
+{
+    return lastResponseAmountValue.load (std::memory_order_relaxed);
+}
+
+juce::String OrchGateAudioProcessor::getResponseOverlaySummaryForUi() const
+{
+    if (! isFollowingConductorResponseForUi())
+        return "Bridge off";
+
+    const int mode = lastResponseModeValue.load (std::memory_order_relaxed);
+
+    if (mode < 0)
+    {
+        const int cc = responseModeCcParameter != nullptr
+            ? juce::roundToInt (responseModeCcParameter->load()) : 106;
+        return "Bridge armed - waiting for CC" + juce::String (cc);
+    }
+
+    const float baseFloor = ccPartMinParameter != nullptr ? ccPartMinParameter->load() : 0.0f;
+    const float baseCeil  = ccPartMaxParameter != nullptr ? ccPartMaxParameter->load() : 100.0f;
+    const bool  baseInvert = ccInvertParameter != nullptr && ccInvertParameter->load() >= 0.5f;
+    const int   baseThreshold = ccThresholdParameter != nullptr
+        ? juce::jlimit (0, 127, juce::roundToInt (ccThresholdParameter->load())) : 64;
+
+    const auto o = resolveResponseOverlay (baseInvert, baseThreshold, baseFloor, baseCeil);
+
+    if (! o.active)
+        return "Bridge M" + juce::String (mode) + " - neutral here";
+
+    juce::StringArray parts;
+
+    if (o.invert != baseInvert)
+        parts.add (juce::String ("Inv ") + (o.invert ? "on" : "off"));
+
+    if (o.threshold != baseThreshold)
+        parts.add ("Th " + juce::String (baseThreshold) + ">" + juce::String (o.threshold));
+
+    if (o.partFloor != baseFloor || o.partCeil != baseCeil)
+        parts.add ("Part " + juce::String (juce::roundToInt (baseFloor)) + "-" + juce::String (juce::roundToInt (baseCeil))
+                   + ">" + juce::String (juce::roundToInt (o.partFloor)) + "-" + juce::String (juce::roundToInt (o.partCeil)));
+
+    return "Bridge M" + juce::String (mode) + ": " + parts.joinIntoString ("  ");
 }
 void OrchGateAudioProcessor::sendAllNotesOff (juce::MidiBuffer& outputBuffer, int samplePosition)
 {
