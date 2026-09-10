@@ -11,6 +11,9 @@ OrchGateAudioProcessor::OrchGateAudioProcessor()
     ccNumberParameter = parameters.getRawParameterValue ("ccNumber");
     ccThresholdParameter = parameters.getRawParameterValue ("ccThreshold");
     ccInvertParameter = parameters.getRawParameterValue ("ccInvert");
+    ccToParticipationParameter = parameters.getRawParameterValue ("ccToParticipation");
+    ccPartMinParameter = parameters.getRawParameterValue ("ccPartMin");
+    ccPartMaxParameter = parameters.getRawParameterValue ("ccPartMax");
         muteModeParameter = parameters.getRawParameterValue ("muteMode");
 passKeyswitchesParameter = parameters.getRawParameterValue ("passKeyswitches");
     keyswitchMinParameter = parameters.getRawParameterValue ("keyswitchMin");
@@ -47,9 +50,33 @@ void OrchGateAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 {
     buffer.clear();
 
-    const float participation = participationParameter != nullptr
+    const float manualParticipation = participationParameter != nullptr
         ? juce::jlimit (0.0f, 100.0f, participationParameter->load())
         : 100.0f;
+
+    const bool ccToParticipation = ccToParticipationParameter != nullptr
+        && ccToParticipationParameter->load() >= 0.5f;
+
+    const float partFloor = ccPartMinParameter != nullptr
+        ? juce::jlimit (0.0f, 100.0f, ccPartMinParameter->load()) : 0.0f;
+    const float partCeil = ccPartMaxParameter != nullptr
+        ? juce::jlimit (0.0f, 100.0f, ccPartMaxParameter->load()) : 100.0f;
+
+    auto participationForCc = [&] (int ccValue) -> float
+    {
+        if (ccValue < 0)
+            return manualParticipation;   // no CC seen yet - fall back to the slider
+
+        const float lo = juce::jmin (partFloor, partCeil);
+        const float hi = juce::jmax (partFloor, partCeil);
+        return juce::jlimit (0.0f, 100.0f, lo + (hi - lo) * static_cast<float> (ccValue) / 127.0f);
+    };
+
+    // Non-const: a matching CC arriving mid-block updates this for the notes
+    // that follow it.
+    float participation = ccToParticipation
+        ? participationForCc (lastCcValue.load (std::memory_order_relaxed))
+        : manualParticipation;
 
     juce::MidiBuffer output;
 
@@ -76,6 +103,9 @@ void OrchGateAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
                     && ccInvertParameter->load() >= 0.5f;
 
                 lastCcValue.store (value, std::memory_order_relaxed);
+
+                if (ccToParticipation)
+                    participation = participationForCc (value);
 
                 const bool normalOpen = value >= threshold;
                 ccGateOpen = inverted ? ! normalOpen : normalOpen;
@@ -338,6 +368,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrchGateAudioProcessor::crea
         "CC Invert",
         false));
 
+    // CC -> Participation: independent of the binary CC gate. When on, the
+    // incoming CC value is mapped across [floor, ceiling] % and used as the
+    // per-note participation probability instead of the manual slider. Turn
+    // the binary CC Gate off for a pure density curve, or leave both on for
+    // "silent below threshold, then fade in from sparse to dense".
+    params.push_back (std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "ccToParticipation", 1 },
+        "CC -> Participation",
+        false));
+
+    params.push_back (std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID { "ccPartMin", 1 },
+        "CC Participation Floor %",
+        0, 100, 0));
+
+    params.push_back (std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID { "ccPartMax", 1 },
+        "CC Participation Ceiling %",
+        0, 100, 100));
+
     params.push_back (std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID { "muteMode", 1 },
         "Mute Mode",
@@ -414,6 +464,27 @@ bool OrchGateAudioProcessor::isCcGateOpenForUi() const
 int OrchGateAudioProcessor::getLastCcValueForUi() const
 {
     return lastCcValue.load (std::memory_order_relaxed);
+}
+
+float OrchGateAudioProcessor::getEffectiveParticipationForUi() const
+{
+    const float manual = participationParameter != nullptr
+        ? juce::jlimit (0.0f, 100.0f, participationParameter->load()) : 100.0f;
+
+    const bool ccToPart = ccToParticipationParameter != nullptr
+        && ccToParticipationParameter->load() >= 0.5f;
+
+    const int v = lastCcValue.load (std::memory_order_relaxed);
+
+    if (! ccToPart || v < 0)
+        return manual;
+
+    const float lo = juce::jmin (ccPartMinParameter != nullptr ? ccPartMinParameter->load() : 0.0f,
+                                 ccPartMaxParameter != nullptr ? ccPartMaxParameter->load() : 100.0f);
+    const float hi = juce::jmax (ccPartMinParameter != nullptr ? ccPartMinParameter->load() : 0.0f,
+                                 ccPartMaxParameter != nullptr ? ccPartMaxParameter->load() : 100.0f);
+
+    return juce::jlimit (0.0f, 100.0f, lo + (hi - lo) * static_cast<float> (v) / 127.0f);
 }
 void OrchGateAudioProcessor::sendAllNotesOff (juce::MidiBuffer& outputBuffer, int samplePosition)
 {

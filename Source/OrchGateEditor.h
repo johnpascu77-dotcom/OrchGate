@@ -40,6 +40,11 @@ juce::Label ccSummaryLabel;
     juce::Label ccThresholdLabel;
     juce::Slider ccThresholdSlider;
 
+    juce::ToggleButton ccToParticipationButton;
+    juce::Label ccPartRangeLabel;
+    juce::Slider ccPartMinSlider;
+    juce::Slider ccPartMaxSlider;
+
         juce::ToggleButton passKeyswitchesButton;
     juce::Label keyswitchMinLabel;
     juce::Slider keyswitchMinSlider;
@@ -59,6 +64,9 @@ juce::Label gateStatusLabel;
     std::unique_ptr<SliderAttachment> ccNumberAttachment;
     std::unique_ptr<SliderAttachment> ccThresholdAttachment;
     std::unique_ptr<ButtonAttachment> ccInvertAttachment;
+    std::unique_ptr<ButtonAttachment> ccToParticipationAttachment;
+    std::unique_ptr<SliderAttachment> ccPartMinAttachment;
+    std::unique_ptr<SliderAttachment> ccPartMaxAttachment;
     std::unique_ptr<ButtonAttachment> passKeyswitchesAttachment;
     std::unique_ptr<SliderAttachment> keyswitchMinAttachment;
     std::unique_ptr<SliderAttachment> keyswitchMaxAttachment;

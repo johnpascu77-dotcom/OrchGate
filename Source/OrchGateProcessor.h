@@ -41,6 +41,9 @@ public:
     bool isCcGateEnabledForUi() const;
     bool isCcGateOpenForUi() const;
     int getLastCcValueForUi() const;
+    // The participation % actually in effect: the CC-derived value when
+    // "CC -> Participation" is on and a CC has been seen, else the slider.
+    float getEffectiveParticipationForUi() const;
 
 juce::AudioProcessorValueTreeState& getParameters();
 
@@ -55,6 +58,9 @@ private:
     std::atomic<float>* ccNumberParameter = nullptr;
     std::atomic<float>* ccThresholdParameter = nullptr;
     std::atomic<float>* ccInvertParameter = nullptr;
+    std::atomic<float>* ccToParticipationParameter = nullptr;
+    std::atomic<float>* ccPartMinParameter = nullptr;
+    std::atomic<float>* ccPartMaxParameter = nullptr;
         std::atomic<float>* muteModeParameter = nullptr;
 
 std::atomic<float>* passKeyswitchesParameter = nullptr;

@@ -4,7 +4,7 @@
 OrchGateAudioProcessorEditor::OrchGateAudioProcessorEditor (OrchGateAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    setSize (640, 720);
+    setSize (640, 812);
 
     titleLabel.setText ("OrchGate", juce::dontSendNotification);
     titleLabel.setJustificationType (juce::Justification::centred);
@@ -105,6 +105,27 @@ OrchGateAudioProcessorEditor::OrchGateAudioProcessorEditor (OrchGateAudioProcess
     ccThresholdSlider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour::fromRGB (28, 36, 46));
     addAndMakeVisible (ccThresholdSlider);
 
+    ccToParticipationButton.setButtonText ("CC -> Participation");
+    ccToParticipationButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
+    addAndMakeVisible (ccToParticipationButton);
+
+    ccPartRangeLabel.setText ("Participation range at CC 0 .. 127  (Floor / Ceiling %)", juce::dontSendNotification);
+    ccPartRangeLabel.setJustificationType (juce::Justification::centred);
+    ccPartRangeLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    ccPartRangeLabel.setFont (juce::FontOptions (12.0f));
+    addAndMakeVisible (ccPartRangeLabel);
+
+    for (auto* s : { &ccPartMinSlider, &ccPartMaxSlider })
+    {
+        s->setSliderStyle (juce::Slider::LinearHorizontal);
+        s->setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 22);
+        s->setRange (0.0, 100.0, 1.0);
+        s->setColour (juce::Slider::thumbColourId, juce::Colour::fromRGB (95, 220, 140));
+        s->setColour (juce::Slider::trackColourId, juce::Colour::fromRGB (95, 200, 245));
+        s->setColour (juce::Slider::textBoxTextColourId, juce::Colours::white);
+        s->setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour::fromRGB (28, 36, 46));
+        addAndMakeVisible (*s);
+    }
 
     passKeyswitchesButton.setButtonText ("Pass Keyswitches");
     passKeyswitchesButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
@@ -177,6 +198,14 @@ OrchGateAudioProcessorEditor::OrchGateAudioProcessorEditor (OrchGateAudioProcess
         audioProcessor.getParameters(),
         "ccThreshold",
         ccThresholdSlider);
+
+    ccToParticipationAttachment = std::make_unique<ButtonAttachment> (
+        audioProcessor.getParameters(), "ccToParticipation", ccToParticipationButton);
+    ccPartMinAttachment = std::make_unique<SliderAttachment> (
+        audioProcessor.getParameters(), "ccPartMin", ccPartMinSlider);
+    ccPartMaxAttachment = std::make_unique<SliderAttachment> (
+        audioProcessor.getParameters(), "ccPartMax", ccPartMaxSlider);
+
     passKeyswitchesAttachment = std::make_unique<ButtonAttachment> (
         audioProcessor.getParameters(),
         "passKeyswitches",
@@ -246,6 +275,17 @@ void OrchGateAudioProcessorEditor::resized()
     ccThresholdLabel.setBounds (area.removeFromTop (20));
     ccThresholdSlider.setBounds (area.removeFromTop (30).withSizeKeepingCentre (440, 30));
 
+    area.removeFromTop (10);
+
+    ccToParticipationButton.setBounds (area.removeFromTop (28).withSizeKeepingCentre (220, 28));
+    ccPartRangeLabel.setBounds (area.removeFromTop (18));
+    {
+        auto row = area.removeFromTop (28).withSizeKeepingCentre (440, 28);
+        ccPartMinSlider.setBounds (row.removeFromLeft (214));
+        row.removeFromLeft (12);
+        ccPartMaxSlider.setBounds (row.removeFromLeft (214));
+    }
+
     area.removeFromTop (12);
 
     passKeyswitchesButton.setBounds (area.removeFromTop (30).withSizeKeepingCentre (220, 30));
@@ -288,7 +328,15 @@ void OrchGateAudioProcessorEditor::timerCallback()
     const int muteModeUi = muteModeParam != nullptr ? juce::roundToInt (muteModeParam->load()) : 0;
     const juce::String muteModeText = muteModeUi == 0 ? "Hard" : "No New";
 
-    participationLabel.setText ("Participation: " + juce::String (participationPercent) + "%", juce::dontSendNotification);
+    auto* ccToPartParam = audioProcessor.getParameters().getRawParameterValue ("ccToParticipation");
+    const bool ccToParticipation = ccToPartParam != nullptr && ccToPartParam->load() >= 0.5f;
+    const int effectiveParticipation = juce::roundToInt (audioProcessor.getEffectiveParticipationForUi());
+
+    participationLabel.setText (
+        ccToParticipation
+            ? "Participation: " + juce::String (effectiveParticipation) + "%  (from CC" + juce::String (ccNumber) + ")"
+            : "Participation: " + juce::String (participationPercent) + "%",
+        juce::dontSendNotification);
 
     ccSummaryLabel.setText (
         muteModeText
@@ -296,6 +344,7 @@ void OrchGateAudioProcessorEditor::timerCallback()
         + " | CC" + juce::String (ccNumber)
         + " | Th" + juce::String (ccThreshold)
         + " | " + juce::String (ccInvert ? "Inv" : "Norm")
+        + juce::String (ccToParticipation ? " | Part<-CC" : "")
         + " | KS " + juce::String (passKeyswitchesUi ? "" : "Off ")
         + juce::String (juce::jmin (keyswitchMinUi, keyswitchMaxUi))
         + "-" + juce::String (juce::jmax (keyswitchMinUi, keyswitchMaxUi)),
