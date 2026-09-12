@@ -25,7 +25,7 @@ juce_add_plugin(OrchGate
     PLUGIN_MANUFACTURER_CODE Jpas
     PLUGIN_CODE Ogat
 
-    FORMATS VST3
+    FORMATS VST3 Standalone
 
     PRODUCT_NAME "OrchGate"
     PLUGIN_NAME "OrchGate"

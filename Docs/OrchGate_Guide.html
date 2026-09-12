@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OrchGate — Reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#15120F; --surface:#1E1A15; --surface-2:#262019; --surface-3:#2E2620;
+    --border:#3A2F22; --border-soft:#2A2319;
+    --text:#EDE6D9; --text-dim:#A79B87; --text-faint:#6E6353;
+    --brass:#D8A94E; --brass-dim:#A67E38;
+    --note:#CB6E47; --note-dim:#8C4C31;
+    --control:#5C93B8; --control-dim:#3E6A85;
+    --sage:#84A672; --sage-dim:#5C7A4E;
+    --violet:#9488B0; --violet-dim:#665C7C;
+    color-scheme: dark;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    background:var(--bg); color:var(--text); margin:0;
+    font-family:"Work Sans", ui-sans-serif, system-ui, sans-serif;
+    line-height:1.55; font-size:15px;
+    background-image: radial-gradient(1100px 480px at 10% -10%, color-mix(in srgb, var(--note) 9%, transparent), transparent 60%);
+  }
+  .wrap{ max-width:1080px; margin:0 auto; padding:36px 26px 70px; }
+  .mono{ font-family:"IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  .crumbs{ font-family:"IBM Plex Mono"; font-size:.7rem; color:var(--text-faint); letter-spacing:.04em; margin-bottom:16px; }
+  .crumbs b{ color:var(--note); font-weight:500; }
+
+  .nameplate{ display:flex; align-items:flex-end; justify-content:space-between; gap:20px; flex-wrap:wrap;
+    padding-bottom:18px; margin-bottom:22px; border-bottom:2px solid var(--border); }
+  .nameplate h1{ font-family:"Big Shoulders Display"; font-weight:800; text-transform:uppercase;
+    font-size:clamp(2.1rem,5vw,3.2rem); line-height:.9; margin:0; letter-spacing:.005em; }
+  .nameplate .role{ color:var(--text-dim); font-size:.92rem; max-width:52ch; margin-top:8px; }
+  .badges{ display:flex; gap:8px; flex-wrap:wrap; }
+  .badge{ font-family:"IBM Plex Mono"; font-size:.66rem; text-transform:uppercase; letter-spacing:.06em;
+    padding:3px 9px; border-radius:20px; white-space:nowrap; }
+  .badge.chain{ color:var(--note); border:1px solid var(--note-dim); background:color-mix(in srgb, var(--note) 14%, transparent); }
+  .badge.live{ color:var(--sage); border:1px solid var(--sage-dim); background:color-mix(in srgb, var(--sage) 14%, transparent); }
+  .badge.plugin-code{ color:var(--text-faint); border:1px dashed var(--text-faint); }
+
+  .lede{ color:var(--text-dim); max-width:74ch; margin:0 0 34px; font-size:.98rem; }
+  .lede strong{ color:var(--text); font-weight:600; }
+
+  .section-head{ display:flex; align-items:baseline; gap:14px; margin:52px 0 18px; }
+  .section-head .num{ font-family:"IBM Plex Mono"; color:var(--text-faint); font-size:.82rem; }
+  .section-head h2{ font-family:"Big Shoulders Display"; font-weight:700; text-transform:uppercase;
+    font-size:1.5rem; margin:0; }
+  .section-head .rule{ flex:1; height:1px; background:var(--border); }
+  .section-note{ color:var(--text-dim); max-width:76ch; margin:-6px 0 22px; font-size:.9rem; }
+
+  .layout{ display:grid; grid-template-columns: 420px 1fr; gap:28px; align-items:start; }
+  @media (max-width:840px){ .layout{ grid-template-columns:1fr; } }
+
+  .shot-frame{ position:relative; border:1px solid var(--border-soft); border-radius:8px; overflow:hidden;
+    background:#0C0A08; box-shadow: 0 14px 34px -16px rgba(0,0,0,.7); }
+  .shot-frame img{ display:block; width:100%; height:auto; }
+  .marker{ position:absolute; transform:translate(-50%,-50%); width:24px; height:24px; border-radius:50%;
+    background:var(--note); color:#1A0F08; border:2px solid #1A0F08; font-family:"IBM Plex Mono"; font-weight:600;
+    font-size:.74rem; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--note) 45%, transparent), 0 3px 10px rgba(0,0,0,.5); }
+  .shot-caption{ color:var(--text-faint); font-size:.76rem; margin-top:10px; }
+
+  .ctrl-list{ display:flex; flex-direction:column; }
+  .ctrl{ display:flex; gap:12px; padding:13px 0; border-bottom:1px solid var(--border-soft); }
+  .ctrl:last-child{ border-bottom:none; }
+  .ctrl .badge-num{ flex:none; width:24px; height:24px; border-radius:50%; background:var(--surface-2);
+    border:1px solid var(--note-dim); color:var(--note); font-family:"IBM Plex Mono"; font-weight:600;
+    font-size:.74rem; display:flex; align-items:center; justify-content:center; margin-top:2px; }
+  .ctrl .c-name{ font-weight:600; font-size:.9rem; }
+  .ctrl .c-id{ font-family:"IBM Plex Mono"; font-size:.66rem; color:var(--text-faint); margin-left:8px; }
+  .ctrl .c-choices{ font-family:"IBM Plex Mono"; font-size:.71rem; color:var(--brass); margin-top:4px; line-height:1.6; }
+  .ctrl .c-desc{ color:var(--text-dim); font-size:.82rem; margin-top:5px; line-height:1.5; }
+  .ctrl .c-default{ font-family:"IBM Plex Mono"; font-size:.66rem; color:var(--sage); margin-top:5px; }
+
+  .table-wrap{ overflow-x:auto; background:var(--surface); border:1px solid var(--border-soft); border-radius:8px; }
+  table{ width:100%; border-collapse:collapse; font-size:.82rem; }
+  th{ text-align:left; font-family:"IBM Plex Mono"; font-weight:500; font-size:.65rem; text-transform:uppercase;
+    letter-spacing:.08em; color:var(--text-faint); padding:10px 14px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  td{ padding:9px 14px; border-bottom:1px solid var(--border-soft); vertical-align:top; }
+  tr:last-child td{ border-bottom:none; }
+  td.pid{ font-family:"IBM Plex Mono"; color:var(--brass); white-space:nowrap; }
+  td.range{ font-family:"IBM Plex Mono"; color:var(--text-faint); white-space:nowrap; font-size:.76rem; }
+  td.desc{ color:var(--text-dim); }
+
+  .readout-note{ display:flex; gap:14px; background:var(--surface); border:1px solid var(--border-soft); border-radius:8px;
+    padding:16px 18px; margin-top:8px; align-items:flex-start; }
+  .readout-note .dot{ flex:none; width:9px; height:9px; border-radius:50%; background:var(--sage); margin-top:6px; }
+  .readout-note p{ margin:0; color:var(--text-dim); font-size:.87rem; }
+  .readout-note code{ font-family:"IBM Plex Mono"; color:var(--sage); font-size:.82rem; }
+
+  .chain-strip{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-family:"IBM Plex Mono"; font-size:.76rem; margin-top:6px; }
+  .chain-strip .hop{ padding:5px 11px; border-radius:5px; background:var(--surface-2); border:1px solid var(--border-soft); color:var(--text-dim); }
+  .chain-strip .hop.here{ background:color-mix(in srgb, var(--note) 20%, var(--surface-2)); border-color:var(--note-dim); color:var(--note); font-weight:600; }
+  .chain-strip .arrow{ color:var(--text-faint); }
+
+  footer{ margin-top:60px; padding-top:20px; border-top:1px solid var(--border); color:var(--text-faint); font-size:.76rem;
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="crumbs">Orch System → Note Path → <b>OrchGate</b></div>
+
+  <div class="nameplate">
+    <div>
+      <h1>OrchGate</h1>
+      <div class="role">Per-track participation gate — decides whether this instrument plays at all right now.</div>
+    </div>
+    <div class="badges">
+      <span class="badge chain">note path · step 4</span>
+      <span class="badge live">live</span>
+      <span class="badge plugin-code mono">Ogat</span>
+    </div>
+  </div>
+
+  <p class="lede">
+    Every note reaching this device either passes or doesn't — manually, by a genuine per-note probability, or by
+    listening to a CC from OrchConductor. It fails <strong>closed</strong> by default (silence until told
+    otherwise), the deliberate fail-safe fix for a real bug found live 2026-09-09: an open-by-default gate meant
+    every transport start left every instrument playing until a corrective CC happened to arrive in time.
+  </p>
+
+  <div class="chain-strip">
+    <span class="hop">Source</span><span class="arrow">→</span>
+    <span class="hop">Randomize</span><span class="arrow">→</span>
+    <span class="hop">OrchNoteFilter</span><span class="arrow">→</span>
+    <span class="hop here">OrchGate</span><span class="arrow">→</span>
+    <span class="hop">OrchNoteMapper</span><span class="arrow">→</span>
+    <span class="hop">instrument</span>
+  </div>
+
+  <div class="section-head"><span class="num">01</span><h2>The Editor</h2><div class="rule"></div></div>
+  <p class="section-note">
+    One column, top to bottom: whether this instance plays at all (1–3), the binary CC gate (4–6), a graduated
+    density mode as an alternative to the binary gate (7), the OrchConductor response bridge (8–9), and keyswitch
+    handling (10–11). The green line at the very bottom is the one thing worth watching live.
+  </p>
+
+  <div class="layout">
+    <div class="shot-frame">
+      <img src="assets/orchgate-editor.png" alt="OrchGate editor, real screenshot, with 11 numbered controls">
+      <div class="marker" style="left:37.8%; top:18.8%">1</div>
+      <div class="marker" style="left:49.9%; top:25.7%">2</div>
+      <div class="marker" style="left:49.9%; top:33.4%">3</div>
+      <div class="marker" style="left:37.8%; top:39.8%">4</div>
+      <div class="marker" style="left:49.9%; top:44.7%">5</div>
+      <div class="marker" style="left:49.9%; top:49.8%">6</div>
+      <div class="marker" style="left:49.9%; top:55.9%">7</div>
+      <div class="marker" style="left:49.9%; top:64.0%">8</div>
+      <div class="marker" style="left:49.9%; top:69.4%">9</div>
+      <div class="marker" style="left:34.8%; top:75.3%">10</div>
+      <div class="marker" style="left:49.9%; top:82.7%">11</div>
+    </div>
+
+    <div class="ctrl-list">
+      <div class="ctrl">
+        <div class="badge-num">1</div>
+        <div><span class="c-name">Manual Gate</span><span class="c-id mono">manualGate</span>
+          <div class="c-desc">The hand-operated on/off. Effective gate is always <em>manual AND (CC gate off, or CC gate open)</em> — this alone can silence the instrument regardless of anything else on the panel.</div>
+          <div class="c-default">default: On</div></div>
+      </div>
+      <div class="ctrl">
+        <div class="badge-num">2</div>
+        <div><span class="c-name">Participation</span><span class="c-id mono">participation</span>
+          <div class="c-choices">0–100%</div>
+          <div class="c-desc">A genuine per-note-on probability, not a volume knob — at 40%, roughly 4 in 10 notes actually sound. Independent of the binary CC gate below.</div>
+          <div class="c-default">default: 100%</div></div>
+      </div>
+      <div class="ctrl">
+        <div class="badge-num">3</div>
+        <div><span class="c-name">Mute Mode</span><span class="c-id mono">muteMode</span>
+          <div class="c-choices">Hard Gate · No New Notes</div>
+          <div class="c-desc">Hard Gate cuts everything immediately, including notes already sounding. No New Notes lets already-sounding notes ring out and only blocks new ones — softer for a closing phrase.</div>
+          <div class="c-default">default: Hard Gate</div></div>
+      </div>
+      <div class="ctrl">
+        <div class="badge-num">4</div>
+        <div><span class="c-name">CC Gate / Invert CC</span><span class="c-id mono">ccGateEnable · ccInvert</span>
+          <div class="c-desc">Turns on listening to an external CC as a second, binary gate condition (on top of Manual Gate, never instead of it). Invert flips which side of the threshold counts as open.</div>
+          <div class="c-default">default: both Off</div></div>
+      </div>
+      <div class="ctrl">
+        <div class="badge-num">5</div>
+        <div><span class="c-name">CC Number</span><span class="c-id mono">ccNumber</span>
+          <div class="c-choices">0–127</div>
+          <div class="c-desc">Which controller this instance listens to for the binary CC gate. OrchConductor's own per-instrument gate map is the usual source.</div>
+          <div class="c-default">default: 20</div></div>
+      </div>
+      <div class="ctrl">
+        <div class="badge-num">6</div>
+        <div><span class="c-name">CC Threshold</span><span class="c-id mono">ccThreshold</span>
+          <div class="c-choices">0–127</div>
+          <div class="c-desc">Value at/above which the CC gate reads as open (below Invert flips this).</div>
+          <div class="c-default">default: 64</div></div>
+      </div>
+      <div class="ctrl">
+        <div class="badge-num">7</div>
+        <div><span class="c-name">CC → Participation</span><span class="c-id mono">ccToParticipation · ccPartMin/Max</span>
+          <div class="c-desc">A different use of the same incoming CC: instead of a hard on/off, its value maps across a Floor–Ceiling % range and becomes the live participation probability — a real density curve, not a threshold. Combine with the binary gate for "silent below threshold, then fade in."</div>
+          <div class="c-default">default: Off, range 0–100%</div></div>
+      </div>
+      <div class="ctrl">
+        <div class="badge-num">8</div>
+        <div><span class="c-name">Follow Conductor Response</span><span class="c-id mono">followConductorResponse + 3 affects toggles</span>
+          <div class="c-desc">Lets OrchConductor's broadcast overlay push Invert / Threshold / Participation away from your own settings by a deterministic, per-instance amount — off by default so a standalone OrchGate (host LFOs, no OrchConductor) is never affected. Each of the three targets can opt out independently.</div>
+          <div class="c-default">default: Off, all 3 affects On</div></div>
+      </div>
+      <div class="ctrl">
+        <div class="badge-num">9</div>
+        <div><span class="c-name">Response Mode / Amount CC</span><span class="c-id mono">responseModeCc · responseAmountCc</span>
+          <div class="c-choices">CC 106 mode · CC 107 amount</div>
+          <div class="c-desc">Which CCs carry the bridge. Mode is a per-instance-seeded "chapter" — every OrchGate diverges (its own gate CC number is in the seed) but all shift together when OrchConductor steps it. Amount (0=off) scales how far the overlay pushes.</div>
+          <div class="c-default">default: 106 / 107</div></div>
+      </div>
+      <div class="ctrl">
+        <div class="badge-num">10</div>
+        <div><span class="c-name">Pass Keyswitches</span><span class="c-id mono">passKeyswitches</span>
+          <div class="c-desc">Keyswitches inside the window below pass through regardless of gate state — a closed gate shouldn't strand the instrument on the wrong articulation. Watch for real destination notes numerically colliding with this window on low instruments (a real bug found 2026-09-09 on Bass Drum, note 35).</div>
+          <div class="c-default">default: On</div></div>
+      </div>
+      <div class="ctrl">
+        <div class="badge-num">11</div>
+        <div><span class="c-name">Keyswitch Min / Max</span><span class="c-id mono">keyswitchMin · keyswitchMax</span>
+          <div class="c-choices">0–127</div>
+          <div class="c-desc">The passthrough window itself — the ecosystem's shared source zone is 12–23, but this default (0–35) is deliberately wider to be safe out of the box.</div>
+          <div class="c-default">default: 0 / 35</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="shot-caption">Real capture of the Standalone build. Status line reads live gate state — the fastest way to confirm what's actually happening without a DAW meter.</div>
+
+  <div class="section-head"><span class="num">02</span><h2>Watch This Live</h2><div class="rule"></div></div>
+  <div class="readout-note">
+    <div class="dot"></div>
+    <p><code>EFFECTIVE GATE OPEN</code> / <code>CLOSED</code> at the bottom of the editor is the one number that
+    folds every condition above (manual, CC gate, response overlay) into a single answer. If a track is
+    unexpectedly silent, check this line before anything else — it tells you whether OrchGate itself is the
+    reason.</p>
+  </div>
+
+  <footer>
+    <span>Source: <span class="mono">Source/OrchGateProcessor.cpp</span>, <span class="mono">createParameterLayout()</span> — regenerate this table if that function changes.</span>
+    <span>OrchGate · <span class="mono">johnpascu77-dotcom</span></span>
+  </footer>
+
+</div>
+</body>
+</html>
