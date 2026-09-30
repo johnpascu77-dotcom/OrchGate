@@ -60,6 +60,10 @@ juce::Label ccSummaryLabel;
     juce::Label keyswitchMaxLabel;
     juce::Slider keyswitchMaxSlider;
 
+    juce::Label stuckNoteLabel;
+    juce::Slider stuckNoteTimeoutSlider;
+    juce::Label stuckNoteStatusLabel;
+
 juce::Label gateStatusLabel;
 
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
@@ -85,6 +89,7 @@ juce::Label gateStatusLabel;
     std::unique_ptr<ButtonAttachment> passKeyswitchesAttachment;
     std::unique_ptr<SliderAttachment> keyswitchMinAttachment;
     std::unique_ptr<SliderAttachment> keyswitchMaxAttachment;
+    std::unique_ptr<SliderAttachment> stuckNoteTimeoutAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OrchGateAudioProcessorEditor)
 };

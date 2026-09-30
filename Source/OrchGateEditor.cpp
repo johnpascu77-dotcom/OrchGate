@@ -4,7 +4,13 @@
 OrchGateAudioProcessorEditor::OrchGateAudioProcessorEditor (OrchGateAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    setSize (640, 968);
+    // Two-column layout (see resized()) instead of the old single tall
+    // column - the whole point being that every control fits in the window
+    // at once, no scrolling/clipping. Resizable too, since a fixed size
+    // was part of the original complaint.
+    setResizable (true, true);
+    setResizeLimits (620, 460, 1000, 760);
+    setSize (700, 560);
 
     titleLabel.setText ("OrchGate", juce::dontSendNotification);
     titleLabel.setJustificationType (juce::Justification::centred);
@@ -199,6 +205,26 @@ OrchGateAudioProcessorEditor::OrchGateAudioProcessorEditor (OrchGateAudioProcess
     keyswitchMaxSlider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour::fromRGB (28, 36, 46));
     addAndMakeVisible (keyswitchMaxSlider);
 
+    stuckNoteLabel.setText ("Stuck Note Timeout", juce::dontSendNotification);
+    stuckNoteLabel.setJustificationType (juce::Justification::centred);
+    stuckNoteLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    stuckNoteLabel.setFont (juce::FontOptions (13.0f));
+    addAndMakeVisible (stuckNoteLabel);
+
+    stuckNoteTimeoutSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    stuckNoteTimeoutSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 22);
+    stuckNoteTimeoutSlider.setRange (0.0, 60.0, 0.1);
+    stuckNoteTimeoutSlider.setColour (juce::Slider::thumbColourId, juce::Colour::fromRGB (245, 170, 95));
+    stuckNoteTimeoutSlider.setColour (juce::Slider::trackColourId, juce::Colour::fromRGB (95, 200, 245));
+    stuckNoteTimeoutSlider.setColour (juce::Slider::textBoxTextColourId, juce::Colours::white);
+    stuckNoteTimeoutSlider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour::fromRGB (28, 36, 46));
+    addAndMakeVisible (stuckNoteTimeoutSlider);
+
+    stuckNoteStatusLabel.setJustificationType (juce::Justification::centred);
+    stuckNoteStatusLabel.setColour (juce::Label::textColourId, juce::Colour::fromRGB (140, 160, 180));
+    stuckNoteStatusLabel.setFont (juce::FontOptions (12.0f));
+    addAndMakeVisible (stuckNoteStatusLabel);
+
     gateStatusLabel.setJustificationType (juce::Justification::centred);
     gateStatusLabel.setFont (juce::FontOptions (20.0f, juce::Font::bold));
     addAndMakeVisible (gateStatusLabel);
@@ -272,6 +298,11 @@ OrchGateAudioProcessorEditor::OrchGateAudioProcessorEditor (OrchGateAudioProcess
         "keyswitchMax",
         keyswitchMaxSlider);
 
+    stuckNoteTimeoutAttachment = std::make_unique<SliderAttachment> (
+        audioProcessor.getParameters(),
+        "stuckNoteTimeoutSeconds",
+        stuckNoteTimeoutSlider);
+
     startTimerHz (15);
     timerCallback();
 }
@@ -293,81 +324,95 @@ void OrchGateAudioProcessorEditor::paint (juce::Graphics& g)
 
 void OrchGateAudioProcessorEditor::resized()
 {
-    auto area = getLocalBounds().reduced (28);
+    auto area = getLocalBounds().reduced (18);
 
-    titleLabel.setBounds (area.removeFromTop (42));
-    subtitleLabel.setBounds (area.removeFromTop (24));
-    buildLabel.setBounds (area.removeFromTop (18));
-
-    area.removeFromTop (30);
-
-    manualGateButton.setBounds (area.removeFromTop (36).withSizeKeepingCentre (180, 36));
-
-    area.removeFromTop (18);
-
-    participationLabel.setBounds (area.removeFromTop (24));
-    participationSlider.setBounds (area.removeFromTop (38).withSizeKeepingCentre (360, 38));
-
-    area.removeFromTop (14);
-
-        muteModeLabel.setBounds (area.removeFromTop (20));
-    muteModeBox.setBounds (area.removeFromTop (28).withSizeKeepingCentre (220, 28));
-
-    area.removeFromTop (12);
-    ccSummaryLabel.setBounds (area.removeFromTop (22));
-
-    auto ccButtonRow = area.removeFromTop (30).withSizeKeepingCentre (360, 30);
-    ccGateEnableButton.setBounds (ccButtonRow.removeFromLeft (180));
-    ccInvertButton.setBounds (ccButtonRow.removeFromLeft (180));
-
-    ccNumberLabel.setBounds (area.removeFromTop (20));
-    ccNumberSlider.setBounds (area.removeFromTop (30).withSizeKeepingCentre (440, 30));
-
-    ccThresholdLabel.setBounds (area.removeFromTop (20));
-    ccThresholdSlider.setBounds (area.removeFromTop (30).withSizeKeepingCentre (440, 30));
+    titleLabel.setBounds (area.removeFromTop (36));
+    subtitleLabel.setBounds (area.removeFromTop (20));
+    buildLabel.setBounds (area.removeFromTop (16));
 
     area.removeFromTop (10);
 
-    ccToParticipationButton.setBounds (area.removeFromTop (28).withSizeKeepingCentre (220, 28));
-    ccPartRangeLabel.setBounds (area.removeFromTop (18));
+    // Gate status is the single most important live readout - full width,
+    // pinned at the bottom, always visible regardless of window size.
+    auto statusArea = area.removeFromBottom (40);
+    gateStatusLabel.setBounds (statusArea);
+
+    area.removeFromBottom (8);
+
+    const int gap = 16;
+    auto leftColumn = area.removeFromLeft ((area.getWidth() - gap) / 2);
+    area.removeFromLeft (gap);
+    auto& rightColumn = area;
+
+    // --- Left column: gate + participation + CC gate -------------------
+    manualGateButton.setBounds (leftColumn.removeFromTop (28).withSizeKeepingCentre (180, 28));
+    leftColumn.removeFromTop (10);
+
+    participationLabel.setBounds (leftColumn.removeFromTop (20));
+    participationSlider.setBounds (leftColumn.removeFromTop (30));
+    leftColumn.removeFromTop (8);
+
+    muteModeLabel.setBounds (leftColumn.removeFromTop (16));
+    muteModeBox.setBounds (leftColumn.removeFromTop (26).withSizeKeepingCentre (200, 26));
+    leftColumn.removeFromTop (10);
+
+    ccSummaryLabel.setBounds (leftColumn.removeFromTop (18));
     {
-        auto row = area.removeFromTop (28).withSizeKeepingCentre (440, 28);
-        ccPartMinSlider.setBounds (row.removeFromLeft (214));
-        row.removeFromLeft (12);
-        ccPartMaxSlider.setBounds (row.removeFromLeft (214));
+        auto row = leftColumn.removeFromTop (26);
+        ccGateEnableButton.setBounds (row.removeFromLeft (row.getWidth() / 2));
+        ccInvertButton.setBounds (row);
     }
 
-    area.removeFromTop (14);
+    ccNumberLabel.setBounds (leftColumn.removeFromTop (16));
+    ccNumberSlider.setBounds (leftColumn.removeFromTop (26));
 
-    followConductorResponseButton.setBounds (area.removeFromTop (28).withSizeKeepingCentre (260, 28));
+    ccThresholdLabel.setBounds (leftColumn.removeFromTop (16));
+    ccThresholdSlider.setBounds (leftColumn.removeFromTop (26));
+    leftColumn.removeFromTop (8);
+
+    ccToParticipationButton.setBounds (leftColumn.removeFromTop (24).withSizeKeepingCentre (200, 24));
+    ccPartRangeLabel.setBounds (leftColumn.removeFromTop (16));
     {
-        auto row = area.removeFromTop (26).withSizeKeepingCentre (440, 26);
-        responseAffectsInvertButton.setBounds (row.removeFromLeft (110));
-        responseAffectsThresholdButton.setBounds (row.removeFromLeft (130));
-        responseAffectsParticipationButton.setBounds (row.removeFromLeft (150));
+        auto row = leftColumn.removeFromTop (26);
+        ccPartMinSlider.setBounds (row.removeFromLeft ((row.getWidth() - 8) / 2));
+        row.removeFromLeft (8);
+        ccPartMaxSlider.setBounds (row);
     }
-    responseCcLabel.setBounds (area.removeFromTop (16));
+
+    // --- Right column: conductor response bridge + keyswitches + watchdog
+    followConductorResponseButton.setBounds (rightColumn.removeFromTop (24).withSizeKeepingCentre (240, 24));
     {
-        auto row = area.removeFromTop (26).withSizeKeepingCentre (440, 26);
-        responseModeCcSlider.setBounds (row.removeFromLeft (214));
-        row.removeFromLeft (12);
-        responseAmountCcSlider.setBounds (row.removeFromLeft (214));
+        auto row = rightColumn.removeFromTop (22);
+        const int third = row.getWidth() / 3;
+        responseAffectsInvertButton.setBounds (row.removeFromLeft (third));
+        responseAffectsThresholdButton.setBounds (row.removeFromLeft (third));
+        responseAffectsParticipationButton.setBounds (row);
     }
-    responseSummaryLabel.setBounds (area.removeFromTop (18));
+    responseCcLabel.setBounds (rightColumn.removeFromTop (14));
+    {
+        auto row = rightColumn.removeFromTop (24);
+        responseModeCcSlider.setBounds (row.removeFromLeft ((row.getWidth() - 8) / 2));
+        row.removeFromLeft (8);
+        responseAmountCcSlider.setBounds (row);
+    }
+    responseSummaryLabel.setBounds (rightColumn.removeFromTop (16));
+    rightColumn.removeFromTop (10);
 
-    area.removeFromTop (12);
+    passKeyswitchesButton.setBounds (rightColumn.removeFromTop (24).withSizeKeepingCentre (200, 24));
+    {
+        auto row = rightColumn.removeFromTop (44);
+        auto left = row.removeFromLeft ((row.getWidth() - 8) / 2);
+        row.removeFromLeft (8);
+        keyswitchMinLabel.setBounds (left.removeFromTop (16));
+        keyswitchMinSlider.setBounds (left);
+        keyswitchMaxLabel.setBounds (row.removeFromTop (16));
+        keyswitchMaxSlider.setBounds (row);
+    }
+    rightColumn.removeFromTop (10);
 
-    passKeyswitchesButton.setBounds (area.removeFromTop (30).withSizeKeepingCentre (220, 30));
-
-    keyswitchMinLabel.setBounds (area.removeFromTop (20));
-    keyswitchMinSlider.setBounds (area.removeFromTop (30).withSizeKeepingCentre (440, 30));
-
-    keyswitchMaxLabel.setBounds (area.removeFromTop (20));
-    keyswitchMaxSlider.setBounds (area.removeFromTop (30).withSizeKeepingCentre (440, 30));
-
-    area.removeFromTop (10);
-
-    gateStatusLabel.setBounds (area.removeFromTop (46));
+    stuckNoteLabel.setBounds (rightColumn.removeFromTop (16));
+    stuckNoteTimeoutSlider.setBounds (rightColumn.removeFromTop (26));
+    stuckNoteStatusLabel.setBounds (rightColumn.removeFromTop (18));
 }
 
 void OrchGateAudioProcessorEditor::timerCallback()
@@ -420,6 +465,19 @@ void OrchGateAudioProcessorEditor::timerCallback()
         juce::dontSendNotification);
 
     responseSummaryLabel.setText (audioProcessor.getResponseOverlaySummaryForUi(), juce::dontSendNotification);
+
+    const float stuckTimeoutSeconds = audioProcessor.getStuckNoteTimeoutSecondsForUi();
+    const int stuckRecoveredCount = audioProcessor.getStuckNotesRecoveredCountForUi();
+
+    stuckNoteStatusLabel.setText (
+        stuckTimeoutSeconds <= 0.0f
+            ? "Watchdog off"
+            : "Recovered: " + juce::String (stuckRecoveredCount),
+        juce::dontSendNotification);
+    stuckNoteStatusLabel.setColour (
+        juce::Label::textColourId,
+        stuckRecoveredCount > 0 ? juce::Colour::fromRGB (245, 170, 95)
+                                 : juce::Colour::fromRGB (140, 160, 180));
 
     const bool effectiveOpen = audioProcessor.isEffectiveGateOpenForUi();
     const bool manualOpen = audioProcessor.isManualGateOpenForUi();

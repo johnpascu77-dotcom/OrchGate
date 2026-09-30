@@ -55,6 +55,16 @@ public:
     // now (e.g. "Inv flip | Th 64>58 | Part 0-100>5-91"), or an idle note.
     juce::String getResponseOverlaySummaryForUi() const;
 
+    // --- Stuck-note watchdog -------------------------------------------
+    // A safety net independent of *why* a note got stuck (a live device-
+    // chain edit mid-note, a dropped message on the way to a cross-process
+    // instrument host like VE Pro, an upstream bug we haven't found yet -
+    // doesn't matter). Any note this instance believes is active for longer
+    // than the timeout gets a forced note-off, regardless of whether a real
+    // note-off ever arrives. 0 = disabled (existing behavior, unchanged).
+    float getStuckNoteTimeoutSecondsForUi() const;
+    int getStuckNotesRecoveredCountForUi() const;
+
     // The per-instance result of the OrchConductor response bridge. Every
     // field starts equal to the plugin's own literal setting; when the bridge
     // is active a deterministic per-instance offset (seeded by the response
@@ -100,6 +110,8 @@ std::atomic<float>* passKeyswitchesParameter = nullptr;
     std::atomic<float>* keyswitchMinParameter = nullptr;
     std::atomic<float>* keyswitchMaxParameter = nullptr;
 
+    std::atomic<float>* stuckNoteTimeoutSecondsParameter = nullptr;
+
     juce::Random random;
 
     // Fail-safe default: closed, not open. Until this instance's selected CC
@@ -122,13 +134,48 @@ std::atomic<float>* passKeyswitchesParameter = nullptr;
     std::atomic<int> lastResponseModeValue { -1 };
     std::atomic<int> lastResponseAmountValue { -1 };
 
-    std::array<std::array<bool, 128>, 16> activeNotes {};
+    // SS-2026-09-28: a REFERENCE COUNT, not a bool - a real live-rig bug
+    // (Violin 1 accumulating permanently stuck notes over a session). Two
+    // overlapping same-(channel,pitch) note-ons that both pass the gate (a
+    // genuine, legitimate re-strike/roll - OrchDelay's own capture logic
+    // deliberately leaves these untouched even with Monophonic Capture on,
+    // see its own doc comment) both get forwarded here, correctly - but with
+    // a bool, the FIRST of the two real note-offs that follows clears the
+    // flag, and the SECOND finds it already false and is silently dropped
+    // (same "stray note-off, no match" logic as everywhere else in this
+    // ecosystem) - Opus receives 2 note-ons and only 1 note-off, permanently
+    // stuck-holding the other voice, with nothing in this plugin's own
+    // bookkeeping left that even knows it's stuck (see runStuckNoteWatchdog's
+    // own doc comment - the 12s watchdog can't catch this either, since the
+    // slot already reads "inactive" the moment the first note-off clears it).
+    // A count fixes this at the root: every note-on that passes increments;
+    // every note-off that passes decrements (and is only ever dropped as a
+    // genuine stray when the count is already 0) - N overlapping occurrences
+    // always take exactly N real note-offs to fully release, never fewer.
+    std::array<std::array<int, 128>, 16> activeNoteCounts {};
+
+    // Wall-clock (juce::Time::getMillisecondCounterHiRes()) timestamp of
+    // when each currently-active slot last turned on - real elapsed time,
+    // not host beat/ppq position, for the same reason OrchPercMapper's own
+    // PoolAllocator uses it: a stuck note doesn't become less stuck because
+    // the transport is stopped, and a beat-time timeout would never even
+    // start counting down while stopped. Only meaningful where
+    // activeNoteCounts[ch][note] > 0. Refreshed on every note-on that passes
+    // through this slot (including a second/third overlapping occurrence),
+    // same approximation as before this comment's own count/bool change -
+    // still just one timestamp per slot, not one per individual occurrence.
+    std::array<std::array<double, 128>, 16> activeNoteStartTimesMs {};
+
+    std::atomic<int> stuckNotesRecoveredCount { 0 };
 
     bool getEffectiveGateOpen() const;
     ResponseOverlay resolveResponseOverlay (bool baseInvert, int baseThreshold,
                                             float basePartFloor, float basePartCeil) const;
     void closeGateSafely (juce::MidiBuffer& outputBuffer, int samplePosition);
     void sendAllNotesOff (juce::MidiBuffer& outputBuffer, int samplePosition);
+    void markNoteActive (int channel, int note, double nowMs);
+    void markNoteInactive (int channel, int note);
+    void runStuckNoteWatchdog (juce::MidiBuffer& outputBuffer, double nowMs);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OrchGateAudioProcessor)
 };

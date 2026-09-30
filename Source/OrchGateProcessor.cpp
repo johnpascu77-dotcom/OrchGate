@@ -24,14 +24,15 @@ OrchGateAudioProcessor::OrchGateAudioProcessor()
 passKeyswitchesParameter = parameters.getRawParameterValue ("passKeyswitches");
     keyswitchMinParameter = parameters.getRawParameterValue ("keyswitchMin");
     keyswitchMaxParameter = parameters.getRawParameterValue ("keyswitchMax");
+    stuckNoteTimeoutSecondsParameter = parameters.getRawParameterValue ("stuckNoteTimeoutSeconds");
 }
 
 void OrchGateAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     juce::ignoreUnused (sampleRate, samplesPerBlock);
 
-    for (auto& channelNotes : activeNotes)
-        channelNotes.fill (false);
+    for (auto& channelNotes : activeNoteCounts)
+        channelNotes.fill (0);
 
     // Closed until proven otherwise - see ccGateOpen's declaration. Every
     // transport start (prepareToPlay) re-arms this, so a stale "open" from a
@@ -102,6 +103,17 @@ void OrchGateAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
     juce::MidiBuffer output;
 
+    // Real elapsed time, not host beat/ppq - see activeNoteStartTimesMs's
+    // declaration. One read per block is plenty; a stuck-note timeout
+    // measured in seconds doesn't need per-sample precision.
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+
+    // Independent of everything below: force-release anything that's been
+    // held longer than the timeout, regardless of cause. Runs once per
+    // block, before the CC/note handling below, so a note freed here this
+    // block can't also get double-freed by the loop further down.
+    runStuckNoteWatchdog (output, nowMs);
+
     for (const auto metadata : midiMessages)
     {
         const auto message = metadata.getMessage();
@@ -137,7 +149,7 @@ void OrchGateAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
                 // nowOpen" (an edge trigger) here - live-rig bug 2026-09-10:
                 // a note that reached the synth by some path this gate never
                 // tracked (the Pass Keyswitches bypass below, a mid-stream
-                // plugin reset, anything) leaves activeNotes/
+                // plugin reset, anything) leaves activeNoteCounts/
                 // previousEffectiveGateOpen believing the gate was already
                 // closed, so an edge-triggered cleanup never fires for it -
                 // "Send All Off" (which resends CC=0 unconditionally) landed
@@ -257,7 +269,7 @@ void OrchGateAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
             if (effectiveGateOpen && passesParticipation)
             {
-                activeNotes[static_cast<size_t> (channel)][static_cast<size_t> (note)] = true;
+                markNoteActive (static_cast<int> (channel), static_cast<int> (note), nowMs);
                 output.addEvent (message, samplePosition);
             }
 
@@ -269,9 +281,9 @@ void OrchGateAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
             const auto channel = juce::jlimit (1, 16, message.getChannel()) - 1;
             const auto note = juce::jlimit (0, 127, message.getNoteNumber());
 
-            if (activeNotes[static_cast<size_t> (channel)][static_cast<size_t> (note)])
+            if (activeNoteCounts[static_cast<size_t> (channel)][static_cast<size_t> (note)] > 0)
             {
-                activeNotes[static_cast<size_t> (channel)][static_cast<size_t> (note)] = false;
+                markNoteInactive (static_cast<int> (channel), static_cast<int> (note));
                 output.addEvent (message, samplePosition);
             }
 
@@ -364,8 +376,8 @@ void OrchGateAudioProcessor::setStateInformation (const void* data, int sizeInBy
     if (xml != nullptr && xml->hasTagName (parameters.state.getType()))
         parameters.replaceState (juce::ValueTree::fromXml (*xml));
 
-    for (auto& channelNotes : activeNotes)
-        channelNotes.fill (false);
+    for (auto& channelNotes : activeNoteCounts)
+        channelNotes.fill (0);
 
     // Same fail-safe-closed reasoning as prepareToPlay() - a restored/reloaded
     // project has no more basis for assuming the gate was left open than a
@@ -516,6 +528,27 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrchGateAudioProcessor::crea
         127,
         35));
 
+    // Safety net, independent of the CC gate logic above: any note this
+    // instance believes is active for longer than this many seconds gets a
+    // forced note-off, regardless of whether a real note-off ever arrives.
+    // 0 = disabled. Default 12s is comfortably longer than any expected
+    // sustained orchestral note/chord in this rig, short enough that a real
+    // stuck note doesn't ring for long before being caught.
+    params.push_back (std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "stuckNoteTimeoutSeconds", 1 },
+        "Stuck Note Timeout",
+        juce::NormalisableRange<float> (0.0f, 60.0f, 0.1f),
+        12.0f,
+        juce::AudioParameterFloatAttributes()
+            .withLabel ("s")
+            .withStringFromValueFunction ([] (float value, int)
+            {
+                return value <= 0.0f ? juce::String ("Off") : juce::String (value, 1) + "s";
+            })
+            .withValueFromStringFunction ([] (const juce::String& text)
+            {
+                return text.retainCharacters ("0123456789.").getFloatValue();
+            })));
 
     return { params.begin(), params.end() };
 }
@@ -526,15 +559,69 @@ void OrchGateAudioProcessor::closeGateSafely (juce::MidiBuffer& outputBuffer, in
     {
         for (int note = 0; note < 128; ++note)
         {
-            if (activeNotes[static_cast<size_t> (channel)][static_cast<size_t> (note)])
+            // One real note-off per still-held occurrence, not just one per
+            // slot - see activeNoteCounts' own doc comment in the header for
+            // why a slot can legitimately hold more than one.
+            auto& count = activeNoteCounts[static_cast<size_t> (channel)][static_cast<size_t> (note)];
+            while (count > 0)
             {
                 outputBuffer.addEvent (juce::MidiMessage::noteOff (channel + 1, note), samplePosition);
-                activeNotes[static_cast<size_t> (channel)][static_cast<size_t> (note)] = false;
+                --count;
             }
         }
     }
 
     sendAllNotesOff (outputBuffer, samplePosition);
+}
+
+void OrchGateAudioProcessor::markNoteActive (int channel, int note, double nowMs)
+{
+    ++activeNoteCounts[static_cast<size_t> (channel)][static_cast<size_t> (note)];
+    activeNoteStartTimesMs[static_cast<size_t> (channel)][static_cast<size_t> (note)] = nowMs;
+}
+
+void OrchGateAudioProcessor::markNoteInactive (int channel, int note)
+{
+    auto& count = activeNoteCounts[static_cast<size_t> (channel)][static_cast<size_t> (note)];
+    count = juce::jmax (0, count - 1);
+}
+
+void OrchGateAudioProcessor::runStuckNoteWatchdog (juce::MidiBuffer& outputBuffer, double nowMs)
+{
+    const float timeoutSeconds = stuckNoteTimeoutSecondsParameter != nullptr
+        ? stuckNoteTimeoutSecondsParameter->load() : 12.0f;
+
+    if (timeoutSeconds <= 0.0f)
+        return;   // watchdog disabled
+
+    const double timeoutMs = static_cast<double> (timeoutSeconds) * 1000.0;
+
+    for (int channel = 0; channel < 16; ++channel)
+    {
+        for (int note = 0; note < 128; ++note)
+        {
+            auto& count = activeNoteCounts[static_cast<size_t> (channel)][static_cast<size_t> (note)];
+            if (count <= 0)
+                continue;
+
+            const double heldForMs = nowMs - activeNoteStartTimesMs[static_cast<size_t> (channel)][static_cast<size_t> (note)];
+
+            if (heldForMs < timeoutMs)
+                continue;
+
+            // Force ALL still-held occurrences of this slot off regardless
+            // of gate/participation state or what muteMode says - this is
+            // the last-resort safety net, not another voice in the normal
+            // gating logic. See activeNoteCounts' own doc comment for why a
+            // slot can hold more than one.
+            while (count > 0)
+            {
+                outputBuffer.addEvent (juce::MidiMessage::noteOff (channel + 1, note), 0);
+                --count;
+                stuckNotesRecoveredCount.fetch_add (1, std::memory_order_relaxed);
+            }
+        }
+    }
 }
 
 bool OrchGateAudioProcessor::getEffectiveGateOpen() const
@@ -758,16 +845,30 @@ juce::String OrchGateAudioProcessor::getResponseOverlaySummaryForUi() const
 
     return "Bridge M" + juce::String (mode) + ": " + parts.joinIntoString ("  ");
 }
+
+float OrchGateAudioProcessor::getStuckNoteTimeoutSecondsForUi() const
+{
+    return stuckNoteTimeoutSecondsParameter != nullptr ? stuckNoteTimeoutSecondsParameter->load() : 12.0f;
+}
+
+int OrchGateAudioProcessor::getStuckNotesRecoveredCountForUi() const
+{
+    return stuckNotesRecoveredCount.load (std::memory_order_relaxed);
+}
+
 void OrchGateAudioProcessor::sendAllNotesOff (juce::MidiBuffer& outputBuffer, int samplePosition)
 {
     for (int channel = 0; channel < 16; ++channel)
     {
         for (int note = 0; note < 128; ++note)
         {
-            if (activeNotes[static_cast<size_t> (channel)][static_cast<size_t> (note)])
+            // One real note-off per still-held occurrence - see
+            // activeNoteCounts' own doc comment in the header.
+            auto& count = activeNoteCounts[static_cast<size_t> (channel)][static_cast<size_t> (note)];
+            while (count > 0)
             {
                 outputBuffer.addEvent (juce::MidiMessage::noteOff (channel + 1, note), samplePosition);
-                activeNotes[static_cast<size_t> (channel)][static_cast<size_t> (note)] = false;
+                --count;
             }
         }
 
