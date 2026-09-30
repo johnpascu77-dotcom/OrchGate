@@ -244,6 +244,17 @@
     unexpectedly silent, check this line before anything else — it tells you whether OrchGate itself is the
     reason.</p>
   </div>
+  <div class="readout-note">
+    <div class="dot"></div>
+    <p><code>Recovered: N</code> is the stuck-note watchdog (<span class="mono">stuckNoteTimeoutSeconds</span>,
+    default 12s, 0 = off) — any note still held past the timeout gets force-released and counted here. Each real
+    note-on now increments a per-(channel, note) count rather than setting a bool, and each note-off decrements it,
+    so N genuinely overlapping same-pitch note-ons (a fast re-strike, or overlapping content relayed in from
+    upstream) correctly require N real note-offs before the slot is considered clear — closing the gate, sending
+    All Notes Off, and the watchdog itself all drain the full count, not just one occurrence. A rising count here is
+    a real symptom worth chasing upstream (the note-off logic feeding this instance), not just something the
+    watchdog quietly papers over.</p>
+  </div>
 
   <footer>
     <span>Source: <span class="mono">Source/OrchGateProcessor.cpp</span>, <span class="mono">createParameterLayout()</span> — regenerate this table if that function changes.</span>
