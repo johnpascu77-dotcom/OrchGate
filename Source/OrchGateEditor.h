@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <JuceHeader.h>
 #include "OrchGateProcessor.h"
@@ -18,6 +18,8 @@ private:
     void updateLabels();
 
     OrchGateAudioProcessor& audioProcessor;
+    juce::TooltipWindow tooltipWindow { this, 700 };   // without one, no setTooltip() text would ever show
+
 
     juce::Label titleLabel;
     juce::Label subtitleLabel;

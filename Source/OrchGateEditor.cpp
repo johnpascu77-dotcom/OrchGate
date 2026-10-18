@@ -1,4 +1,4 @@
-﻿#include "OrchGateEditor.h"
+#include "OrchGateEditor.h"
 #include "OrchGateBuildInfo.h"
 
 OrchGateAudioProcessorEditor::OrchGateAudioProcessorEditor (OrchGateAudioProcessor& p)
@@ -228,6 +228,40 @@ OrchGateAudioProcessorEditor::OrchGateAudioProcessorEditor (OrchGateAudioProcess
     gateStatusLabel.setJustificationType (juce::Justification::centred);
     gateStatusLabel.setFont (juce::FontOptions (20.0f, juce::Font::bold));
     addAndMakeVisible (gateStatusLabel);
+
+    // Tooltips (text from Docs/OrchGate_Guide.html): hovering a control or its label shows what it does.
+    manualGateButton.setTooltip ("The hand-operated on/off. Effective gate is always manual AND (CC gate off, or CC gate open) — this alone can silence the instrument regardless of anything else on the panel.");
+    participationSlider.setTooltip ("A genuine per-note-on probability, not a volume knob — at 40%, roughly 4 in 10 notes actually sound. Independent of the binary CC gate below.");
+    participationLabel.setTooltip ("A genuine per-note-on probability, not a volume knob — at 40%, roughly 4 in 10 notes actually sound. Independent of the binary CC gate below.");
+    muteModeBox.setTooltip ("Hard Gate cuts everything immediately, including notes already sounding. No New Notes lets already-sounding notes ring out and only blocks new ones — softer for a closing phrase.");
+    muteModeLabel.setTooltip ("Hard Gate cuts everything immediately, including notes already sounding. No New Notes lets already-sounding notes ring out and only blocks new ones — softer for a closing phrase.");
+    ccGateEnableButton.setTooltip ("Turns on listening to an external CC as a second, binary gate condition (on top of Manual Gate, never instead of it). Invert flips which side of the threshold counts as open.");
+    ccInvertButton.setTooltip ("Turns on listening to an external CC as a second, binary gate condition (on top of Manual Gate, never instead of it). Invert flips which side of the threshold counts as open.");
+    ccNumberSlider.setTooltip ("Which controller this instance listens to for the binary CC gate. OrchConductor's own per-instrument gate map is the usual source.");
+    ccNumberLabel.setTooltip ("Which controller this instance listens to for the binary CC gate. OrchConductor's own per-instrument gate map is the usual source.");
+    ccThresholdSlider.setTooltip ("Value at/above which the CC gate reads as open (below Invert flips this).");
+    ccThresholdLabel.setTooltip ("Value at/above which the CC gate reads as open (below Invert flips this).");
+    ccToParticipationButton.setTooltip ("A different use of the same incoming CC: instead of a hard on/off, its value maps across a Floor–Ceiling % range and becomes the live participation probability — a real density curve, not a threshold. Combine with the binary gate for \"silent below threshold, then fade in.\"");
+    ccPartMinSlider.setTooltip ("A different use of the same incoming CC: instead of a hard on/off, its value maps across a Floor–Ceiling % range and becomes the live participation probability — a real density curve, not a threshold. Combine with the binary gate for \"silent below threshold, then fade in.\"");
+    followConductorResponseButton.setTooltip ("Lets OrchConductor's broadcast overlay push Invert / Threshold / Participation away from your own settings by a deterministic, per-instance amount — off by default so a standalone OrchGate (host LFOs, no OrchConductor) is never affected. Each of the three targets can opt out independently.");
+    responseModeCcSlider.setTooltip ("Which CCs carry the bridge. Mode is a per-instance-seeded \"chapter\" — every OrchGate diverges (its own gate CC number is in the seed) but all shift together when OrchConductor steps it. Amount (0=off) scales how far the overlay pushes.");
+    responseAmountCcSlider.setTooltip ("Which CCs carry the bridge. Mode is a per-instance-seeded \"chapter\" — every OrchGate diverges (its own gate CC number is in the seed) but all shift together when OrchConductor steps it. Amount (0=off) scales how far the overlay pushes.");
+    passKeyswitchesButton.setTooltip ("Keyswitches inside the window below pass through regardless of gate state — a closed gate shouldn't strand the instrument on the wrong articulation. Watch for real destination notes numerically colliding with this window on low instruments (a real bug found 2026-09-09 on Bass Drum, note 35).");
+    keyswitchMinSlider.setTooltip ("The passthrough window itself — the ecosystem's shared source zone is 12–23, but this default (0–35) is deliberately wider to be safe out of the box.");
+    keyswitchMinLabel.setTooltip ("The passthrough window itself — the ecosystem's shared source zone is 12–23, but this default (0–35) is deliberately wider to be safe out of the box.");
+    keyswitchMaxSlider.setTooltip ("The passthrough window itself — the ecosystem's shared source zone is 12–23, but this default (0–35) is deliberately wider to be safe out of the box.");
+    keyswitchMaxLabel.setTooltip ("The passthrough window itself — the ecosystem's shared source zone is 12–23, but this default (0–35) is deliberately wider to be safe out of the box.");
+    // written by hand (controls the guide has no row for, labels, read-outs)
+    ccPartMaxSlider.setTooltip ("Ceiling of the CC to Participation range: the participation probability when the incoming CC is at its highest. Together with the Floor it makes a density curve instead of a threshold.");
+    responseAffectsInvertButton.setTooltip ("Follow Conductor Response may push the CC Invert setting. Switch off to keep your own value.");
+    responseAffectsThresholdButton.setTooltip ("Follow Conductor Response may push the CC Threshold. Switch off to keep your own value.");
+    responseAffectsParticipationButton.setTooltip ("Follow Conductor Response may push the Participation probability. Switch off to keep your own value.");
+    stuckNoteTimeoutSlider.setTooltip ("Stuck-note watchdog: a note still held after this many seconds is force-released and counted in Recovered. 0 = off.");
+    stuckNoteLabel.setTooltip ("Stuck-note watchdog: a note still held after this many seconds is force-released and counted in Recovered. 0 = off.");
+    stuckNoteStatusLabel.setTooltip ("How many notes the watchdog had to force-release. A rising count is a real symptom worth chasing upstream.");
+    gateStatusLabel.setTooltip ("The effective gate: manual gate, CC gate and the Conductor response folded into one answer. If a track is unexpectedly silent, check this first.");
+    ccSummaryLabel.setTooltip ("A one-line summary of the CC gate: on or off, CC number, threshold and whether it is inverted.");
+    responseSummaryLabel.setTooltip ("A one-line summary of the Conductor response bridge: which CCs carry it and what it is allowed to change.");
 
     manualGateAttachment = std::make_unique<ButtonAttachment> (
         audioProcessor.getParameters(),
